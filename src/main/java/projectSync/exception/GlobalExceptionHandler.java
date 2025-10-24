@@ -1,45 +1,62 @@
 package projectSync.exception;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.URI;
+import java.time.Instant;
 
-@ControllerAdvice // Esta anotación hace que la clase actúe como un interceptor global de excepciones.
+/**
+ * Global exception handler for the REST API.
+ * This class uses {@link RestControllerAdvice} to intercept exceptions thrown by controllers
+ * and translate them into a standardized, client-friendly {@link ProblemDetail} JSON response,
+ * following the RFC 7807 standard.
+ */
+@RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // Este método se ejecutará CADA VEZ que se lance una ResourceNotFoundException
-    // desde CUALQUIER controlador.
+    // It's a good practice to have a logger available for the generic handler.
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /**
+     * Handles {@link ResourceNotFoundException} instances.
+     * This method is triggered when a requested resource does not exist. It creates a
+     * standard {@link ProblemDetail} response with an HTTP 404 (Not Found) status.
+     *
+     * @param ex The caught {@link ResourceNotFoundException}.
+     * @return A {@link ProblemDetail} object that will be serialized into the HTTP response body.
+     */
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<?> handleResourceNotFoundException(ResourceNotFoundException ex, WebRequest request) {
-
-        // Creamos un cuerpo de error personalizado y limpio
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", new Date());
-        body.put("status", HttpStatus.NOT_FOUND.value());
-        body.put("error", "Not Found");
-        body.put("message", ex.getMessage());
-        body.put("path", request.getDescription(false).replace("uri=", ""));
-
-        // Usamos ResponseEntity para tener control total sobre la respuesta HTTP
-        return new ResponseEntity<>(body, HttpStatus.NOT_FOUND);
+    public ProblemDetail handleResourceNotFoundException(ResourceNotFoundException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problemDetail.setTitle("Resource Not Found");
+        problemDetail.setType(URI.create("")); // URL
+        problemDetail.setProperty("timestamp", Instant.now());
+        return problemDetail;
     }
 
-    // Puedes añadir más métodos @ExceptionHandler para otros tipos de excepciones
-    @ExceptionHandler(Exception.class) // Un manejador genérico para cualquier otra excepción
-    public ResponseEntity<?> handleGlobalException(Exception ex, WebRequest request) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", new Date());
-        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        body.put("error", "Internal Server Error");
-        body.put("message", "An unexpected error occurred. Contact the administrator.");
-        body.put("path", request.getDescription(false).replace("uri=", ""));
+    /**
+     * A catch-all handler for any unhandled {@link Exception}.
+     * This method prevents sensitive information (like stack traces) from leaking to the client.
+     * It returns a generic {@link ProblemDetail} response with an HTTP 500 (Internal Server Error) status.
+     * The actual exception should be logged for debugging purposes.
+     *
+     * @param ex The caught {@link Exception}.
+     * @return A generic {@link ProblemDetail} object for internal server errors.
+     */
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleGenericException(Exception ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal error has occurred.");
+        problemDetail.setTitle("Internal Server Error");
+        problemDetail.setType(URI.create("")); // URL
+        problemDetail.setProperty("timestamp", Instant.now());
 
-        return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
+        log.error("An unexpected error occurred: {}", ex.getMessage(), ex);
+
+        return problemDetail;
     }
 }
